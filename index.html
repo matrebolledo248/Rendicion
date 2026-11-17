@@ -181,7 +181,7 @@ function fd(s){return s?new Date(s).toLocaleDateString('es-AR'):''}
 function fdt(s){return s?s.split('-').reverse().join('/'):''}
 function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function blank(n,o){return Object.assign({id:uid(),name:'Viaje '+n,date:today(),a:'',b:'',km:'',round:true,kind:'',bid:null,done:null,ca:null,cb:null,route:null,msg:''},o||{})}
-const DEF=()=>({eff:10,pr:'',trips:[],bols:[],places:[],last:null,hist:[],view:'pend',draft:null,home:null,office:null,cAuto:true,cRoute:null,skip:{},prov:'osm',gkey:'',tiles:'auto',seeded:false});
+const DEF=()=>({eff:10,pr:'',trips:[],bols:[],places:[],last:null,hist:[],view:'pend',draft:null,home:null,office:null,cAuto:true,cRoute:null,skip:{},prov:'osm',gkey:'',tiles:'auto',seeded:false,seed2:false});
 let S=DEF();
 try{const r=localStorage.getItem(KEY)||localStorage.getItem('rend-comb-osm-v1');if(r)Object.assign(S,JSON.parse(r))}catch(e){}
 ['trips','bols','places','hist'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[]});
@@ -197,6 +197,11 @@ const SEED=[
 if(!S.seeded){
   SEED.forEach(p=>{if(!S.places.some(x=>x.name.toLowerCase()===p.name.toLowerCase()))S.places.push(JSON.parse(JSON.stringify(p)))});
   S.seeded=true;save();
+}
+if(!S.seed2){
+  if(!S.places.some(x=>x.name.toLowerCase()==='casa'))S.places.push({id:'seed-casa',name:'Casa',addr:'-36.936465, -73.025390',c:{la:-36.936465,lo:-73.02539}});
+  if(!S.home&&!S.office){S.home={addr:'Casa',c:{la:-36.936465,lo:-73.02539}};S.office={addr:'Cicla 3D',c:null};S.cAuto=true}
+  S.seed2=true;save();
 }
 const bolOf=id=>S.bols.find(b=>b.id===id);
 const tripById=id=>S.draft.id===id?S.draft:S.trips.find(x=>x.id===id);
@@ -459,7 +464,7 @@ function stat(t){
   const st=document.querySelector(`[data-id="${t.id}"] [data-st]`);if(!st)return;
   const c=calc(t);
   st.className='st'+(t.msg&&t.msg[0]==='⚠'?' e':'');
-  st.textContent=(t.done?'✔ Rendido el '+fd(t.done)+' · ':'')+(t.msg||(c.km?`${f(c.km)} km · ${f(c.l)} L estimados${t.km>0?' (km reales)':''}`:'Completá origen y destino: la ruta se calcula sola'));
+  st.textContent=(t.done?'✔ Rendido el '+fd(t.done)+' · ':'')+(t.msg||(c.km?`${f(c.km)} km${t.km>0?' (km reales)':(t.round?' (ida y vuelta: 2 × '+f(c.km/2)+' km)':' (solo un sentido)')} · ${f(c.l)} L estimados`:'Completá origen y destino: la ruta se calcula sola'));
 }
 function update(){
   if(syncCommute())drawCards();
@@ -827,6 +832,7 @@ if(!/^https?:$/.test(location.protocol))$('mapwarn').style.display='block';
 commuteUI();provUI();initMap().then(()=>{drawCards();fit()});
 async function resolvePlaces(){for(const p of S.places.filter(x=>!x.c)){try{const r=await geo(p.addr);p.c=r.c;save();if(r.net)await sleep(1100)}catch(e){}}}
 Q=Q.then(()=>resolvePlaces());
+Q=Q.then(()=>{if(S.home&&S.office&&!S.cRoute&&navigator.onLine!==false)return $('csave').onclick()});
 S.trips.concat([S.draft]).forEach(t=>{if(!t.route&&t.a&&t.b&&!t.msg)auto(t,500)});
 </script>
 </body>
