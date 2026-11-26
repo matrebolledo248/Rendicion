@@ -206,6 +206,7 @@ if(!S.seed2){
   S.seed2=true;save();
 }
 const bolOf=id=>S.bols.find(b=>b.id===id);
+const rest=b=>Math.max(0,b.l-(b.used||0));
 const tripById=id=>S.draft.id===id?S.draft:S.trips.find(x=>x.id===id);
 function vis(t){return S.view==='todos'||(S.view==='rend'?!!t.done:!t.done)}
 
@@ -441,16 +442,16 @@ function renderBols(){
   const hk=Object.keys(HG).sort().reverse();
   $('hist').innerHTML=hk.length?hk.map(k=>{const g=HG[k];return `<div style="padding:6px 0;border-bottom:1px solid var(--bd)"><b>${fd(g.d)}</b> · ${g.n} boleta(s)<div class="st" style="margin:2px 0 0">${f(g.km)} km · ${f(g.le,1)} L estimados · ${f(g.l,1)} L cargados</div></div>`}).join(''):'<div class="note" style="margin:0">Todavía no marcaste ninguna rendición.</div>';
   const pt=S.trips.filter(t=>!t.done&&calc(t).km>0),pb=S.bols.filter(b=>!b.done);
-  const Ke=pt.reduce((o,t)=>o+calc(t).km,0),Le=pt.reduce((o,t)=>o+calc(t).l,0),Lb=pb.reduce((o,b)=>o+b.l,0),bal=Lb-Le;
+  const Ke=pt.reduce((o,t)=>o+calc(t).km,0),Le=pt.reduce((o,t)=>o+calc(t).l,0),Lb=pb.reduce((o,b)=>o+rest(b),0),bal=Lb-Le;
   $('real').innerHTML=(!pb.length&&!pt.length)?'<div class="note" style="margin:0">Cuando cargues viajes y boletas verás acá el balance de combustible.</div>':
   `<b>Balance de combustible (pendiente de rendir)</b>
   <div class="big" style="margin-top:8px"><div class="k"><b>${f(Lb,1)} L</b><span>cargados en boletas</span></div><div class="k"><b>${f(Le,1)} L</b><span>estimados en viajes (${f(Ke,0)} km)</span></div></div>
-  <div style="font-weight:600;margin-top:10px;padding:10px;border-radius:10px;background:var(--bg)">${bal>=-0.05?`Cubierto ✔: los litros cargados cubren el consumo estimado de los viajes (sobran ${f(Math.max(bal,0),1)} L, por ejemplo por uso personal)`:`Faltan ${f(-bal,1)} L: los viajes estimados consumen más de lo cargado`}</div>
+  <div style="font-weight:600;margin-top:10px;padding:10px;border-radius:10px;background:var(--bg)">${bal>=-0.05?`Cubierto ✔: los litros cargados cubren el consumo estimado de los viajes (sobran ${f(Math.max(bal,0),1)} L: quedan como saldo para la próxima rendición)`:`Faltan ${f(-bal,1)} L: los viajes estimados consumen más de lo cargado`}</div>
   ${Lb>0&&Ke>0?`<div class="note">Rendimiento que lo balancearía: <b>${f(Ke/Lb,1)} km/L</b> (configurado: ${f(S.eff,1)}). Es más fiable si siempre llenaste el tanque.</div>`:''}
   <div class="row" style="margin-top:8px">${Lb>0&&Ke>0?`<button class="g" data-useeff="${(Ke/Lb).toFixed(2)}">Usar este rendimiento</button>`:''}</div>
   <div class="note">No importa en qué día cargaste: el balance compara todo lo pendiente. Asignar viajes a boletas solo ordena la rendición.</div>`;
   const list=S.bols.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  $('bl-list').innerHTML=list.length?list.map(b=>`<div class="card" data-b="${b.id}"><div class="h" style="margin:0"><b style="flex:1">${fdt(b.date)} · ${f(b.l,2)} L${b.amt>0?' · $'+f(b.amt,0):''}${b.done?' <span class="ok">✔ rendida '+fd(b.done)+'</span>':''}</b><button class="g" data-delb>✕</button></div></div>`).join(''):'<div class="note">Todavía no cargaste boletas.</div>';
+  $('bl-list').innerHTML=list.length?list.map(b=>`<div class="card" data-b="${b.id}"><div class="h" style="margin:0"><b style="flex:1">${fdt(b.date)} · ${f(b.l,2)} L${b.amt>0?' · $'+f(b.amt,0):''}${b.used>0&&!b.done?' · saldo '+f(rest(b),2)+' L':''}${b.done?' <span class="ok">✔ rendida '+fd(b.done)+'</span>':''}</b><button class="g" data-delb>✕</button></div></div>`).join(''):'<div class="note">Todavía no cargaste boletas.</div>';
 }
 function renderPlaces(){
   $('pl-list').innerHTML=S.places.length?S.places.map(p=>`<div class="card" data-p="${p.id}"><div class="h" style="margin:0"><b style="flex:1">📍 ${esc(p.name)}</b><button class="g" data-delp>✕</button></div><div class="st" style="margin:4px 0 0">${esc(p.addr)}</div></div>`).join(''):'<div class="note">Todavía no guardaste lugares.</div>';
@@ -692,6 +693,8 @@ $('undo').onclick=()=>{
   if(!S.last){alert('No hay rendiciones marcadas.');return}
   if(!confirm('¿Deshacer la última rendición ('+fd(S.last)+')? Sus boletas y viajes vuelven a quedar pendientes.'))return;
   const st=S.last;
+  const hi=S.hist.findIndex(x=>x.d===st);
+  if(hi>=0){(S.hist[hi].alloc||[]).forEach(a=>{const b=bolOf(a.id);if(b)b.used=Math.max(0,(b.used||0)-a.use)});S.hist.splice(hi,1)}
   S.bols.forEach(b=>{if(b.done===st)b.done=null});S.trips.forEach(t=>{if(t.done===st)t.done=null});
   const all=S.bols.concat(S.trips).map(x=>x.done).filter(Boolean).sort();
   S.last=all.length?all[all.length-1]:null;
@@ -734,18 +737,25 @@ function csvEsc(x){x=String(x==null?'':x);return /[;"\n]/.test(x)?'"'+x.replace(
 const num=n=>(+n).toFixed(2).replace('.',',');
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
 function repData(){
-  const bs=S.bols.filter(b=>!b.done).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const all=S.trips.filter(t=>!t.done&&calc(t).km>0).sort((x,y)=>(x.date||'').localeCompare(y.date||''));
+  const byDate=(x,y)=>(x.date||'').localeCompare(y.date||'');
+  const bs=S.bols.filter(b=>!b.done&&rest(b)>0.005).sort(byDate);
+  const all=S.trips.filter(t=>!t.done&&calc(t).km>0).sort(byDate);
   const ts=all.filter(t=>t.kind!=='casa'),cs=all.filter(t=>t.kind==='casa');
   const sum=a=>a.reduce((o,t)=>{const c=calc(t);o.km+=c.km;o.l+=c.l;return o},{km:0,l:0});
-  const T=sum(ts),C=sum(cs);
-  return {bs,ts,cs,T,C,K:T.km+C.km,Lt:T.l+C.l,Lb:bs.reduce((o,b)=>o+b.l,0),A:bs.reduce((o,b)=>o+(+b.amt||0),0),KC:C.km,LC:C.l,
+  const T=sum(ts),C=sum(cs),Lt=T.l+C.l;
+  let left=Lt,Lb=0,A=0,Ru=0,RuA=0;
+  const al=bs.map(b=>{
+    const r=rest(b),p=b.l>0&&b.amt>0?b.amt/b.l:0,use=Math.min(r,left);
+    left-=use;Lb+=r;A+=r*p;Ru+=use;RuA+=use*p;
+    return {b,r,p,use,saldo:r-use,amt:use*p,samt:(r-use)*p};
+  });
+  return {bs,al,ts,cs,T,C,K:T.km+C.km,Lt,Lb,A,Ru,RuA,saldo:Lb-Ru,saldoA:A-RuA,falta:Math.max(0,Lt-Lb),KC:C.km,LC:C.l,
     sinRuta:S.trips.filter(t=>!t.done&&t.kind!=='casa'&&!(calc(t).km>0)).length};
 }
 function repCSV(R){
-  const rows=[['BOLETAS DE COMBUSTIBLE'],['Fecha','Litros','Monto ($)']];
-  R.bs.forEach(b=>rows.push([fdt(b.date),num(b.l),b.amt>0?num(b.amt):'']));
-  rows.push(['Total',num(R.Lb),num(R.A)],[],['VIAJES DE TERRENO'],['Fecha','Viaje','Origen','Destino','Ida y vuelta','Km','Litros est.']);
+  const rows=[['BOLETAS DE COMBUSTIBLE'],['Fecha','Litros disponibles','Rendible (L)','Rendible ($)','Saldo (L)','Saldo ($)']];
+  R.al.forEach(a=>rows.push([fdt(a.b.date)+(a.b.used>0?' (saldo anterior)':''),num(a.r),num(a.use),a.p>0?num(a.amt):'',num(a.saldo),a.p>0?num(a.samt):'']));
+  rows.push(['Total',num(R.Lb),num(R.Ru),R.A>0?num(R.RuA):'',num(R.saldo),R.A>0?num(R.saldoA):''],[],['VIAJES DE TERRENO'],['Fecha','Viaje','Origen','Destino','Ida y vuelta','Km','Litros est.']);
   R.ts.forEach(t=>{const c=calc(t);rows.push([fdt(t.date),t.name,t.a,t.b,t.round?'Sí':'No',num(c.km),num(c.l)])});
   rows.push(['Subtotal terreno','','','','',num(R.T.km),num(R.T.l)],[]);
   if(R.cs.length){
@@ -753,17 +763,20 @@ function repCSV(R){
     R.cs.forEach(t=>{const c=calc(t);rows.push([fdt(t.date),'Casa ↔ oficina',t.a,t.b,'Sí',num(c.km),num(c.l)])});
     rows.push(['Subtotal casa ↔ oficina','','','','',num(R.C.km),num(R.C.l)],[]);
   }
-  rows.push(['TOTAL km y litros estimados','','','','',num(R.K),num(R.Lt)],['Litros cargados (boletas)','','','','','',num(R.Lb)],['Balance (cargado - estimado)','','','','','',num(R.Lb-R.Lt)],['Rendimiento (km/L)','','','','','',num(S.eff)],['Rendición anterior','','','','','',S.last?fd(S.last):'—']);
+  rows.push(['TOTAL km y litros estimados','','','','',num(R.K),num(R.Lt)],['Rendible con viajes (L)','','','','','',num(R.Ru)],['Saldo pendiente para la próxima rendición (L)','','','','','',num(R.saldo)],['Faltan litros sin boleta (L)','','','','','',num(R.falta)],['Rendimiento (km/L)','','','','','',num(S.eff)],['Rendición anterior','','','','','',S.last?fd(S.last):'—']);
   return '\ufeff'+rows.map(r=>r.map(csvEsc).join(';')).join('\r\n');
 }
 function repText(R){
   let o=`RENDICIÓN DE COMBUSTIBLE (${fd(new Date())})\nRendición anterior: ${S.last?fd(S.last):'—'} · Rendimiento: ${f(S.eff)} km/L\n\nBOLETAS\n`;
-  R.bs.forEach(b=>{o+=`- ${fdt(b.date)}: ${f(b.l,2)} L${b.amt>0?' · $'+f(b.amt,0):''}\n`});
-  o+=`Total cargado: ${f(R.Lb,2)} L${R.A>0?' · $'+f(R.A,0):''}\n\nVIAJES DE TERRENO\n`;
+  R.al.forEach(a=>{o+=`- ${fdt(a.b.date)}${a.b.used>0?' (saldo anterior)':''}: disponible ${f(a.r,2)} L · rendible ${f(a.use,2)} L${a.p>0?' ($'+f(a.amt,0)+')':''} · saldo ${f(a.saldo,2)} L\n`});
+  o+=`\nVIAJES DE TERRENO\n`;
   R.ts.forEach(t=>{o+=`- ${fdt(t.date)} ${t.name}: ${t.a} → ${t.b}${t.round?' (ida y vuelta)':''} · ${f(calc(t).km)} km · ${f(calc(t).l,2)} L\n`});
   o+=`Subtotal terreno: ${f(R.T.km)} km · ${f(R.T.l,2)} L\n`;
   if(R.cs.length)o+=`\nCASA ↔ OFICINA: ${R.cs.length} día(s) · ${f(R.C.km)} km · ${f(R.C.l,2)} L\n`;
-  return o+`\nTOTAL: ${f(R.K)} km · ${f(R.Lt,2)} L estimados · ${f(R.Lb,2)} L cargados\nBalance (cargado - estimado): ${f(R.Lb-R.Lt,2)} L`;
+  o+=`\nTOTAL: ${f(R.K)} km · ${f(R.Lt,2)} L estimados\nRendible con viajes: ${f(R.Ru,2)} L${R.A>0?' · $'+f(R.RuA,0):''}`;
+  if(R.saldo>0.005)o+=`\nSaldo pendiente para la próxima rendición: ${f(R.saldo,2)} L${R.A>0?' · $'+f(R.saldoA,0):''}`;
+  if(R.falta>0.005)o+=`\nFaltan ${f(R.falta,2)} L sin boleta`;
+  return o;
 }
 let REP=null;
 function closeRep(){$('rep').classList.remove('on');$('rep').innerHTML='';REP=null}
@@ -771,19 +784,23 @@ function openRep(){
   const R=repData();
   if(!R.bs.length&&!R.ts.length){alert('No hay boletas ni viajes pendientes.');return}
   REP=R;
-  const bal=R.Lb-R.Lt;
+  const money=n=>n>0?'$'+f(n,0):'—';
   const body=`<h3>Boletas de combustible</h3>
-  <div style="overflow-x:auto"><table><tr><th>Fecha</th><th style="text-align:right">Litros</th><th>Monto</th></tr>
-  ${R.bs.map(b=>`<tr><td>${fdt(b.date)}</td><td style="text-align:right">${f(b.l,2)}</td><td>${b.amt>0?'$'+f(b.amt,0):'—'}</td></tr>`).join('')}
-  <tr><td><b>Total cargado</b></td><td style="text-align:right"><b>${f(R.Lb,2)}</b></td><td><b>${R.A>0?'$'+f(R.A,0):'—'}</b></td></tr></table></div>
+  <div style="overflow-x:auto"><table><tr><th>Fecha</th><th>Disponible (L)</th><th>Rendible (L)</th><th>Rendible ($)</th><th>Saldo (L)</th></tr>
+  ${R.al.map(a=>`<tr><td>${fdt(a.b.date)}${a.b.used>0?'<br><small>(saldo anterior)</small>':''}</td><td style="text-align:right">${f(a.r,2)}</td><td style="text-align:right">${f(a.use,2)}</td><td style="text-align:right">${a.p>0?money(a.amt):'—'}</td><td style="text-align:right">${f(a.saldo,2)}</td></tr>`).join('')}
+  <tr><td><b>Total</b></td><td style="text-align:right"><b>${f(R.Lb,2)}</b></td><td style="text-align:right"><b>${f(R.Ru,2)}</b></td><td style="text-align:right"><b>${R.A>0?money(R.RuA):'—'}</b></td><td style="text-align:right"><b>${f(R.saldo,2)}</b></td></tr></table></div>
   ${R.ts.length?`<h3>Viajes de terreno</h3><div style="overflow-x:auto"><table><tr><th>Fecha</th><th>Viaje</th><th>Km</th><th>L est.</th></tr>
   ${R.ts.map(t=>{const c=calc(t);return `<tr><td>${fdt(t.date)}</td><td>${esc(t.name)}<br><small>${esc(t.a)} → ${esc(t.b)}${t.round?' (ida y vuelta)':''}</small></td><td>${f(c.km)}</td><td>${f(c.l,2)}</td></tr>`}).join('')}
   <tr><td colspan="2"><b>Subtotal terreno</b></td><td><b>${f(R.T.km)}</b></td><td><b>${f(R.T.l,2)}</b></td></tr></table></div>`:''}
   ${R.cs.length?`<h3>Casa ↔ oficina (ida y vuelta)</h3><div style="overflow-x:auto"><table><tr><th>Fecha</th><th>Trayecto</th><th>Km</th><th>L est.</th></tr>
   ${R.cs.map(t=>{const c=calc(t);return `<tr><td>${fdt(t.date)}</td><td>${esc(t.a)} ↔ ${esc(t.b)}</td><td>${f(c.km)}</td><td>${f(c.l,2)}</td></tr>`}).join('')}
   <tr><td colspan="2"><b>Subtotal casa ↔ oficina</b></td><td><b>${f(R.C.km)}</b></td><td><b>${f(R.C.l,2)}</b></td></tr></table></div>`:''}
-  <h3>Balance</h3>
-  <p style="margin:4px 0">Consumo estimado: <b>${f(R.K)} km · ${f(R.Lt,2)} L</b><br>Litros cargados: <b>${f(R.Lb,2)} L</b><br>Balance (cargado − estimado): <b>${f(bal,2)} L</b> · ${bal>=-0.05?'Cubierto ✔':'Faltan litros'}<br><small>Incluye ${f(R.KC)} km (${f(R.LC,2)} L) de trayectos casa ↔ oficina en días de terreno.</small></p>
+  <h3>Resumen</h3>
+  <p style="margin:4px 0">Consumo estimado de los viajes: <b>${f(R.K)} km · ${f(R.Lt,2)} L</b><br>
+  Rendible con viajes: <b>${f(R.Ru,2)} L${R.A>0?' · '+money(R.RuA):''}</b><br>
+  ${R.saldo>0.005?`Saldo pendiente para la próxima rendición: <b>${f(R.saldo,2)} L${R.A>0?' · '+money(R.saldoA):''}</b><br>`:''}
+  ${R.falta>0.005?`Faltan <b>${f(R.falta,2)} L</b> sin boleta que los cubra<br>`:''}
+  <small>Incluye ${f(R.KC)} km (${f(R.LC,2)} L) de trayectos casa ↔ oficina en días de terreno.</small></p>
   ${R.sinRuta?`<p class="note noprint">⚠ ${R.sinRuta} viaje(s) sin ruta calculada no están incluidos.</p>`:''}`;
   $('rep').innerHTML=`<div class="rep">
   <div class="noprint row" style="margin-bottom:14px"><button id="rp-print">Imprimir / Guardar PDF</button><button class="g" id="rp-csv">Descargar CSV</button><button class="g" id="rp-copy">Copiar texto</button><button class="g" id="rp-done">Marcar como rendido</button><button class="g" id="rp-close">Cerrar</button></div>
@@ -796,10 +813,12 @@ function openRep(){
   $('rp-copy').onclick=async()=>{try{await navigator.clipboard.writeText(repText(REP));alert('Texto copiado.')}catch(e){alert('No se pudo copiar desde este navegador.')}};
   $('rp-close').onclick=closeRep;
   $('rp-done').onclick=()=>{
-    if(!confirm('¿Marcar '+REP.bs.length+' boleta(s) y '+(REP.ts.length+REP.cs.length)+' viaje(s) como rendidos hoy?'))return;
-    const st=new Date().toISOString();
-    REP.bs.forEach(b=>b.done=st);REP.ts.concat(REP.cs).forEach(t=>t.done=st);
-    S.hist.push({d:st,n:REP.bs.length,km:REP.K,l:REP.Lt});S.last=st;
+    const nt=REP.ts.length+REP.cs.length;
+    if(!confirm('¿Marcar '+nt+' viaje(s) como rendidos hoy?'+(REP.saldo>0.005?' Quedarán '+f(REP.saldo,2)+' L de saldo para la próxima rendición.':'')))return;
+    const st=new Date().toISOString(),alloc=[];
+    REP.al.forEach(a=>{if(a.use>0.0001){a.b.used=(a.b.used||0)+a.use;alloc.push({id:a.b.id,use:a.use});if(rest(a.b)<=0.005)a.b.done=st}});
+    REP.ts.concat(REP.cs).forEach(t=>t.done=st);
+    S.hist.push({d:st,n:alloc.length,km:REP.K,l:REP.Lt,alloc});S.last=st;
     save();closeRep();drawCards();fit();
   };
 }
